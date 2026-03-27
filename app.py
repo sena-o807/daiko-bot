@@ -12,8 +12,8 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # ===== 設定 =====
-CHANNEL_ACCESS_TOKEN = "YOUR_ACCESS_TOKEN"
-CHANNEL_SECRET = "YOUR_SECRET"
+CHANNEL_ACCESS_TOKEN = "rPe7xqjYineh3NLysFFCUQOttnIcd5x86n4FvIiM/Q32OuYQl6Ou9T139SIZPsy69aIDlOff4v1T9Q/i2xx28vkQhDqr5nn/HldIkktf4MAzXFc2m+FT4hSv1nncE4DRZ9kNgYAndlzVR/5gxTH5+AdB04t89/1O/w1cDnyilFU="
+CHANNEL_SECRET = "ab3d2f37e7e7ec96bccefa4eecff76ca"
 GROUP_ID = "YOUR_GROUP_ID"  # 後で入れる
 
 DATA_FILE = "data.json"
