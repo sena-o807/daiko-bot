@@ -193,9 +193,15 @@ def generate_list():
 
     return text
 
-# ===== cron（代行がある時だけ投稿）=====
+# ===== cron（20時のみ実行）=====
 @app.route("/cron", methods=['GET'])
 def cron():
+    now = datetime.now()
+
+    # 20時以外は何もしない
+    if now.hour != 20:
+        return "NOT TIME"
+
     data = load_data()
 
     today = datetime.now()
