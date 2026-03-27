@@ -83,27 +83,40 @@ def handle_message(event):
     text = event.message.text
     user_id = event.source.user_id
     message_id = event.message.id
+    user_name = get_user_name(user_id)
 
     data = load_data()
-
     date = extract_date(text)
+
+    # ===== 一覧コマンド =====
+    if text == "代行一覧":
+        reply(event, generate_list())
+        return
 
     # ===== 削除処理 =====
     if date and is_delete_message(text):
         new_data = []
+        deleted = False
+
         for item in data:
             item_date = datetime.fromisoformat(item["date"])
-            if not (item_date.date() == date.date() and item["userId"] == user_id):
-                new_data.append(item)
+            if item_date.date() == date.date() and item["userId"] == user_id:
+                deleted = True
+                continue
+            new_data.append(item)
 
         save_data(new_data)
+
+        if deleted:
+            reply(event, "代行を削除しました")
         return
 
-    # ===== 登録処理 =====
-    if date and is_valid_date(date):
+    # ===== 登録処理（ここ変更）=====
+    if date and is_valid_date(date) and "代行" in text:
         data.append({
             "date": date.isoformat(),
             "userId": user_id,
+            "userName": user_name,
             "messageId": message_id,
             "createdAt": datetime.now().isoformat()
         })
@@ -112,6 +125,16 @@ def handle_message(event):
 
         reply(event, f"{date.month}/{date.day} の代行を登録しました")
         return
+
+# ===== ユーザー名取得 =====
+def get_user_name(user_id):
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            profile = line_bot_api.get_profile(user_id)
+            return profile.display_name
+    except:
+        return "不明"
 
 # ===== 返信 =====
 def reply(event, text):
@@ -142,11 +165,11 @@ def generate_list():
 
     for d in data:
         dt = datetime.fromisoformat(d["date"])
-        text += f"・{dt.month}/{dt.day}\n"
+        text += f"・{dt.month}/{dt.day}（{d['userName']}）\n"
 
     return text
 
-# ===== cron用（毎日20時） =====
+# ===== cron =====
 @app.route("/cron", methods=['GET'])
 def cron():
     message = generate_list()
