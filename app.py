@@ -1,5 +1,6 @@
 import json
 import re
+import os
 from datetime import datetime, timedelta
 from flask import Flask, request, abort
 
@@ -11,14 +12,14 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # ===== 設定 =====
-CHANNEL_ACCESS_TOKEN = "rPe7xqjYineh3NLysFFCUQOttnIcd5x86n4FvIiM/Q32OuYQl6Ou9T139SIZPsy69aIDlOff4v1T9Q/i2xx28vkQhDqr5nn/HldIkktf4MAzXFc2m+FT4hSv1nncE4DRZ9kNgYAndlzVR/5gxTH5+AdB04t89/1O/w1cDnyilFU="
-CHANNEL_SECRET = "ab3d2f37e7e7ec96bccefa4eecff76ca"
+CHANNEL_ACCESS_TOKEN = "YOUR_ACCESS_TOKEN"
+CHANNEL_SECRET = "YOUR_SECRET"
+GROUP_ID = "YOUR_GROUP_ID"  # 後で入れる
 
 DATA_FILE = "data.json"
 
 app = Flask(__name__)
 handler = WebhookHandler(CHANNEL_SECRET)
-
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 
 # ===== データ操作 =====
@@ -63,8 +64,11 @@ def is_delete_message(text):
 # ===== Webhook =====
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+
+    print("===== CALLBACK RECEIVED =====")
+    print(body)
 
     try:
         handler.handle(body, signature)
@@ -80,6 +84,8 @@ def handle_message(event):
     print(event)
     print("===== SOURCE =====")
     print(event.source)
+
+    text = event.message.text
     user_id = event.source.user_id
     message_id = event.message.id
 
@@ -101,7 +107,6 @@ def handle_message(event):
 
         save_data(new_data)
 
-        # 該当なしメッセージのみ返す
         if not found:
             reply(event, "該当する代行が見つかりませんでした")
         return
@@ -117,7 +122,6 @@ def handle_message(event):
 
         save_data(data)
 
-        # 軽い通知
         reply(event, f"{date.month}/{date.day} の代行を登録しました")
         return
 
@@ -136,11 +140,9 @@ def reply(event, text):
 def generate_list():
     data = load_data()
 
-    # 期限切れ削除
     today = datetime.now()
     data = [d for d in data if datetime.fromisoformat(d["date"]) >= today]
 
-    # ソート：日付→作成順
     data.sort(key=lambda x: (x["date"], x["createdAt"]))
 
     save_data(data)
@@ -164,9 +166,6 @@ def cron():
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
-        # グループID入れる
-        GROUP_ID = "YOUR_GROUP_ID"
-
         line_bot_api.push_message(
             {
                 "to": GROUP_ID,
@@ -176,8 +175,7 @@ def cron():
 
     return "OK"
 
-import os
-
+# ===== 起動（Render対応） =====
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
