@@ -9,7 +9,7 @@ from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 )
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, Event
 
 # ===== 設定 =====
 CHANNEL_ACCESS_TOKEN = "rPe7xqjYineh3NLysFFCUQOttnIcd5x86n4FvIiM/Q32OuYQl6Ou9T139SIZPsy69aIDlOff4v1T9Q/i2xx28vkQhDqr5nn/HldIkktf4MAzXFc2m+FT4hSv1nncE4DRZ9kNgYAndlzVR/5gxTH5+AdB04t89/1O/w1cDnyilFU="
@@ -52,18 +52,15 @@ def extract_date(text):
                 return None
     return None
 
-# ===== コマ抽出（改善版）=====
+# ===== コマ抽出（日付の後ろだけ）=====
 def extract_period(text):
-    # 日付を探す
     date_match = re.search(r'(\d{1,2}[/-]\d{1,2}|\d{1,2}月\d{1,2}日)', text)
     
     if not date_match:
         return None
 
-    # 日付より後ろだけ取得
     after_text = text[date_match.end():]
 
-    # コマ抽出
     m = re.search(r'(\d+[^\s]*コマ)', after_text)
     
     if m:
@@ -95,6 +92,12 @@ def callback():
         abort(400)
 
     return 'OK'
+
+# ===== デバッグログ =====
+@handler.add(Event)
+def log_all_event(event):
+    print("===== DEBUG EVENT =====", flush=True)
+    print(event, flush=True)
 
 # ===== メイン処理 =====
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -177,7 +180,6 @@ def generate_list():
     data = [d for d in data if datetime.fromisoformat(d["date"]) >= today]
 
     data.sort(key=lambda x: (x["date"], x["createdAt"]))
-
     save_data(data)
 
     if not data:
@@ -191,10 +193,25 @@ def generate_list():
 
     return text
 
-# ===== cron =====
+# ===== cron（代行がある時だけ投稿）=====
 @app.route("/cron", methods=['GET'])
 def cron():
-    message = generate_list()
+    data = load_data()
+
+    today = datetime.now()
+    data = [d for d in data if datetime.fromisoformat(d["date"]) >= today]
+
+    if not data:
+        return "NO DATA"
+
+    data.sort(key=lambda x: (x["date"], x["createdAt"]))
+    save_data(data)
+
+    message = f"📋現在の代行一覧（{len(data)}件）\n\n"
+
+    for d in data:
+        dt = datetime.fromisoformat(d["date"])
+        message += f"・{dt.month}/{dt.day} {d['period']}（{d['userName']}）\n"
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
