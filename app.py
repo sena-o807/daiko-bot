@@ -52,6 +52,13 @@ def extract_date(text):
                 return None
     return None
 
+# ===== コマ抽出（そのまま文字列）=====
+def extract_period(text):
+    m = re.search(r'(\d+[^\s]*コマ)', text)
+    if m:
+        return m.group(1)
+    return None
+
 # ===== 3ヶ月以内判定 =====
 def is_valid_date(date):
     today = datetime.now()
@@ -86,14 +93,16 @@ def handle_message(event):
     user_name = get_user_name(user_id)
 
     data = load_data()
+
     date = extract_date(text)
+    period = extract_period(text)
 
     # ===== 一覧コマンド =====
     if text == "代行一覧":
         reply(event, generate_list())
         return
 
-    # ===== 削除処理 =====
+    # ===== 削除 =====
     if date and is_delete_message(text):
         new_data = []
         deleted = False
@@ -111,10 +120,11 @@ def handle_message(event):
             reply(event, "代行を削除しました")
         return
 
-    # ===== 登録処理（ここ変更）=====
-    if date and is_valid_date(date) and "代行" in text:
+    # ===== 登録 =====
+    if date and is_valid_date(date) and "代行" in text and period:
         data.append({
             "date": date.isoformat(),
+            "period": period,
             "userId": user_id,
             "userName": user_name,
             "messageId": message_id,
@@ -123,7 +133,7 @@ def handle_message(event):
 
         save_data(data)
 
-        reply(event, f"{date.month}/{date.day} の代行を登録しました")
+        reply(event, f"{date.month}/{date.day} {period} を登録しました")
         return
 
 # ===== ユーザー名取得 =====
@@ -165,7 +175,7 @@ def generate_list():
 
     for d in data:
         dt = datetime.fromisoformat(d["date"])
-        text += f"・{dt.month}/{dt.day}（{d['userName']}）\n"
+        text += f"・{dt.month}/{dt.day} {d['period']}（{d['userName']}）\n"
 
     return text
 
