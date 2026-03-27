@@ -52,11 +52,23 @@ def extract_date(text):
                 return None
     return None
 
-# ===== コマ抽出（そのまま文字列）=====
+# ===== コマ抽出（改善版）=====
 def extract_period(text):
-    m = re.search(r'(\d+[^\s]*コマ)', text)
+    # 日付を探す
+    date_match = re.search(r'(\d{1,2}[/-]\d{1,2}|\d{1,2}月\d{1,2}日)', text)
+    
+    if not date_match:
+        return None
+
+    # 日付より後ろだけ取得
+    after_text = text[date_match.end():]
+
+    # コマ抽出
+    m = re.search(r'(\d+[^\s]*コマ)', after_text)
+    
     if m:
         return m.group(1)
+
     return None
 
 # ===== 3ヶ月以内判定 =====
