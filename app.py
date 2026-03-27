@@ -76,11 +76,10 @@ def callback():
 # ===== メイン処理 =====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    print("===== EVENT RECEIVED =====")
+    print("===== EVENT =====")
     print(event)
-    print("DEBUG:", event)
-    print("SOURCE:", event.source)
-    text = event.message.text
+    print("===== SOURCE =====")
+    print(event.source)
     user_id = event.source.user_id
     message_id = event.message.id
 
