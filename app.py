@@ -1,15 +1,17 @@
+import os
 import json
 import re
-import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from flask import Flask, request, abort
 
-from linebot.v3.webhook import WebhookHandler
-from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-)
+from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.webhooks import MessageEvent, TextMessageContent, Event
+from linebot.v3.messaging import (
+    Configuration, ApiClient, MessagingApi,
+    ReplyMessageRequest, TextMessage
+)
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # ===== 設定 =====
 CHANNEL_ACCESS_TOKEN = "rPe7xqjYineh3NLysFFCUQOttnIcd5x86n4FvIiM/Q32OuYQl6Ou9T139SIZPsy69aIDlOff4v1T9Q/i2xx28vkQhDqr5nn/HldIkktf4MAzXFc2m+FT4hSv1nncE4DRZ9kNgYAndlzVR/5gxTH5+AdB04t89/1O/w1cDnyilFU="
@@ -17,6 +19,10 @@ CHANNEL_SECRET = "ab3d2f37e7e7ec96bccefa4eecff76ca"
 GROUP_ID = "Cda29bba1aa8811b34ac7b333e4ddc06b"
 
 DATA_FILE = "data.json"
+LAST_SENT_FILE = "last_sent.txt"
+
+# ===== JST =====
+JST = timezone(timedelta(hours=9))
 
 app = Flask(__name__)
 handler = WebhookHandler(CHANNEL_SECRET)
@@ -45,40 +51,50 @@ def extract_date(text):
         m = re.search(p, text)
         if m:
             month, day = map(int, m.groups())
-            year = datetime.now().year
+            year = datetime.now(JST).year
             try:
-                return datetime(year, month, day)
+                return datetime(year, month, day, tzinfo=JST)
             except:
                 return None
     return None
 
-# ===== コマ抽出（日付の後ろだけ）=====
+# ===== コマ抽出 =====
 def extract_period(text):
     date_match = re.search(r'(\d{1,2}[/-]\d{1,2}|\d{1,2}月\d{1,2}日)', text)
-    
     if not date_match:
         return None
 
     after_text = text[date_match.end():]
-
     m = re.search(r'(\d+[^\s]*コマ)', after_text)
-    
+
     if m:
         return m.group(1)
-
     return None
 
-# ===== 3ヶ月以内判定 =====
+# ===== 日付チェック（当日OK）=====
 def is_valid_date(date):
-    today = datetime.now()
+    today = datetime.now(JST).date()
     limit = today + timedelta(days=90)
-    return today <= date <= limit
+    return today <= date.date() <= limit
 
 # ===== 削除判定 =====
 DELETE_KEYWORDS = ["見つかりました", "決まりました", "埋まりました", "〆", "締め"]
 
 def is_delete_message(text):
     return any(k in text for k in DELETE_KEYWORDS)
+
+# ===== 送信済みチェック =====
+def already_sent_today():
+    today = datetime.now(JST).date()
+    try:
+        with open(LAST_SENT_FILE, "r") as f:
+            return f.read() == str(today)
+    except:
+        return False
+
+def mark_sent_today():
+    with open(LAST_SENT_FILE, "w") as f:
+        f.write(str(datetime.now(JST).date()))
 
 # ===== Webhook =====
 @app.route("/callback", methods=['POST'])
@@ -93,26 +109,21 @@ def callback():
 
     return 'OK'
 
-# ===== デバッグログ =====
-@handler.add(Event)
-def log_all_event(event):
-    print("===== DEBUG EVENT =====", flush=True)
-    print(event, flush=True)
-
 # ===== メイン処理 =====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     text = event.message.text
     user_id = event.source.user_id
     message_id = event.message.id
-    user_name = get_user_name(user_id)
 
     data = load_data()
 
     date = extract_date(text)
     period = extract_period(text)
 
-    # ===== 一覧コマンド =====
+    user_name = get_user_name(user_id)
+
+    # ===== 一覧 =====
     if text == "代行一覧":
         reply(event, generate_list())
         return
@@ -143,7 +154,7 @@ def handle_message(event):
             "userId": user_id,
             "userName": user_name,
             "messageId": message_id,
-            "createdAt": datetime.now().isoformat()
+            "createdAt": datetime.now(JST).isoformat()
         })
 
         save_data(data)
@@ -151,7 +162,7 @@ def handle_message(event):
         reply(event, f"{date.month}/{date.day} {period} を登録しました")
         return
 
-# ===== ユーザー名取得 =====
+# ===== ユーザー名 =====
 def get_user_name(user_id):
     try:
         with ApiClient(configuration) as api_client:
@@ -176,8 +187,8 @@ def reply(event, text):
 def generate_list():
     data = load_data()
 
-    today = datetime.now()
-    data = [d for d in data if datetime.fromisoformat(d["date"]) >= today]
+    today = datetime.now(JST).date()
+    data = [d for d in data if datetime.fromisoformat(d["date"]).date() >= today]
 
     data.sort(key=lambda x: (x["date"], x["createdAt"]))
     save_data(data)
@@ -193,19 +204,21 @@ def generate_list():
 
     return text
 
-# ===== cron（20時のみ実行）=====
+# ===== cron（12時・1日1回）=====
 @app.route("/cron", methods=['GET'])
 def cron():
-    now = datetime.now()
+    now = datetime.now(JST)
 
-    # 20時以外は何もしない
-    if now.hour != 20:
+    if now.hour != 12:
         return "NOT TIME"
+
+    if already_sent_today():
+        return "ALREADY SENT"
 
     data = load_data()
 
-    today = datetime.now()
-    data = [d for d in data if datetime.fromisoformat(d["date"]) >= today]
+    today = now.date()
+    data = [d for d in data if datetime.fromisoformat(d["date"]).date() >= today]
 
     if not data:
         return "NO DATA"
@@ -228,6 +241,7 @@ def cron():
             }
         )
 
+    mark_sent_today()
     return "OK"
 
 # ===== 起動 =====
