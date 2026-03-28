@@ -65,7 +65,7 @@ def extract_period(text):
         return None
 
     after_text = text[date_match.end():]
-    m = re.search(r'(\d+[^\s]*コマ)', after_text)
+    m = re.search(r'(\d+[^\s]*コマ目)', after_text)
 
     if m:
         return m.group(1)
