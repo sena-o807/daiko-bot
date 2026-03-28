@@ -204,12 +204,12 @@ def generate_list():
 
     return text
 
-# ===== cron（12時・1日1回）=====
+# ===== cron=====
 @app.route("/cron", methods=['GET'])
 def cron():
     now = datetime.now(JST)
 
-    if now.hour != 12:
+    if now.hour != 13:
         return "NOT TIME"
 
     if already_sent_today():
