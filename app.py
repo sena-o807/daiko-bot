@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, request, abort
@@ -21,7 +22,6 @@ GROUP_ID = "Cda29bba1aa8811b34ac7b333e4ddc06b"
 DATA_FILE = "data.json"
 LAST_SENT_FILE = "last_sent.txt"
 
-# ===== JST =====
 JST = timezone(timedelta(hours=9))
 
 app = Flask(__name__)
@@ -39,6 +39,17 @@ def load_data():
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+# ===== テキスト正規化 =====
+def normalize_text(text):
+    text = unicodedata.normalize("NFKC", text)
+
+    # 記号統一
+    text = text.replace("〜", "~").replace("～", "~")
+    text = text.replace("，", ",").replace("．", ".")
+    text = text.replace("・", ",")
+
+    return text
 
 # ===== 日付抽出 =====
 def extract_date(text):
@@ -65,25 +76,31 @@ def extract_period(text):
         return None
 
     after_text = text[date_match.end():]
-    m = re.search(r'(\d+[^\s]*コマ目)', after_text)
 
+    m = re.search(r'(\d+[^\s]*コマ目)', after_text)
     if m:
         return m.group(1)
+
     return None
 
-# ===== 日付チェック（当日OK）=====
+# ===== 曜日生成 =====
+def get_weekday(date):
+    weekday = ["月","火","水","木","金","土","日"]
+    return weekday[date.weekday()]
+
+# ===== 日付チェック =====
 def is_valid_date(date):
     today = datetime.now(JST).date()
     limit = today + timedelta(days=90)
     return today <= date.date() <= limit
 
 # ===== 削除判定 =====
-DELETE_KEYWORDS = ["見つかりました", "決まりました", "埋まりました", "〆", "締め"]
+DELETE_KEYWORDS = ["見つかりました", "みつかりました", "〆"]
 
 def is_delete_message(text):
     return any(k in text for k in DELETE_KEYWORDS)
 
-# ===== 送信済みチェック =====
+# ===== 送信制御 =====
 def already_sent_today():
     today = datetime.now(JST).date()
     try:
@@ -112,7 +129,9 @@ def callback():
 # ===== メイン処理 =====
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    text = event.message.text
+    raw_text = event.message.text
+    text = normalize_text(raw_text)
+
     user_id = event.source.user_id
     message_id = event.message.id
 
@@ -159,7 +178,7 @@ def handle_message(event):
 
         save_data(data)
 
-        reply(event, f"{date.month}/{date.day} {period} を登録しました")
+        reply(event, f"{date.month}/{date.day} を登録しました")
         return
 
 # ===== ユーザー名 =====
@@ -200,16 +219,18 @@ def generate_list():
 
     for d in data:
         dt = datetime.fromisoformat(d["date"])
-        text += f"・{dt.month}/{dt.day} {d['period']}（{d['userName']}）\n"
+        w = get_weekday(dt)
+
+        text += f"・{dt.month}/{dt.day}（{w}） {d['period']}（{d['userName']}）\n"
 
     return text
 
-# ===== cron=====
+# ===== cron =====
 @app.route("/cron", methods=['GET'])
 def cron():
     now = datetime.now(JST)
 
-    if now.hour != 13:
+    if now.hour != 20:
         return "NOT TIME"
 
     if already_sent_today():
@@ -230,7 +251,9 @@ def cron():
 
     for d in data:
         dt = datetime.fromisoformat(d["date"])
-        message += f"・{dt.month}/{dt.day} {d['period']}（{d['userName']}）\n"
+        w = get_weekday(dt)
+
+        message += f"・{dt.month}/{dt.day}（{w}） {d['period']}（{d['userName']}）\n"
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
